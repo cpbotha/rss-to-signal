@@ -9,20 +9,42 @@
 # we need to store seen post urls (the item ids) and their dates, as well as last etag
 # quickest to just maintain a json file which is deserialised into dict
 
+# TODO:
+# - CLI argument start_date
+# - retrieve og:image from post into temporary file
+# - tests
+
 import datetime
 import json
 from pathlib import Path
 from typing import cast
 
 import feedparser
-from dateutil.parser import parse
+import httpx
 import typer
+from bs4 import BeautifulSoup
+from dateutil.parser import parse
 
 LPED = "latest_processed_entry_date"
 
 
-def process_entry(e):
-    print(f"handling {e.guid} with {e.published}")
+app = typer.Typer()
+
+
+def get_og_image(url):
+    with httpx.Client(timeout=10) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        tag = soup.find("meta", property="og:image")
+        if tag and tag.get("content"):
+            return tag["content"]
+    return None
+
+
+def process_entry(e, no_signal=False):
+    # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
+    print(f"handling {e.id} and {e.link} with {e.published}")
 
 
 def default(obj):
@@ -51,6 +73,7 @@ def object_hook(o):
     return o
 
 
+@app.command()
 def main(profile: str):
     cfg = json.load(Path(_config_fn(profile)).open())
     feed_url = cfg["feed_url"]
@@ -94,4 +117,5 @@ def main(profile: str):
 
 
 if __name__ == "__main__":
-    typer.run(main)
+    # typer.run(main)
+    app()
