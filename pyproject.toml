@@ -5,7 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "beautifulsoup4>=4.13.4",
     "feedparser>=6.0.11",
+    "httpx>=0.28.1",
     "python-dateutil>=2.9.0.post0",
     "typer>=0.16.0",
 ]
+
+[project.scripts]
+rss-to-signal = "main:app"
+
+# you need build system for scripts
+# and for this build-system, you need subdir with source code
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
