@@ -5,17 +5,12 @@
 # 1. download latest rss, using feedparser's etag mechanism
 # 2. process any items with date later than latest date, either latest from seen list or from argument
 # 3. for each item, prepare url, title, description, og:image for thumbnail so we can invoke signal-cli
-# notes:
-# we need to store seen post urls (the item ids) and their dates, as well as last etag
-# quickest to just maintain a json file which is deserialised into dict
-
-# TODO:
-# - retrieve og:image from post into temporary file
-# - tests
 
 import datetime
 import json
+import mimetypes
 from pathlib import Path
+import subprocess
 from typing import cast
 
 import feedparser
@@ -23,6 +18,7 @@ import httpx
 import typer
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
+import tempfile
 
 LPED = "latest_processed_entry_date"
 
@@ -36,14 +32,56 @@ def get_og_image(url):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         tag = soup.find("meta", property="og:image")
-        if tag and tag.get("content"):
-            return tag["content"]
+        if tag and (img_url := cast(str, tag.get("content"))):
+            # this is a url to a png / webp
+            # download to temporary file
+            resp = client.get(img_url)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+            suffix = mimetypes.guess_extension(content_type) or img_url[-4:]
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+                f.write(resp.content)
+                return f.name
     return None
 
 
-def process_entry(e, no_signal=False):
+def process_entry(e, dests: list, no_signal=False):
     # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
     print(f"handling {e.id} and {e.link} with {e.published}")
+
+    og_image = get_og_image(e.link)
+    if og_image is not None:
+        img_part = f' --preview-image "{og_image}"'
+    else:
+        img_part = ""
+
+    for dest in dests:
+        if not dest.get("enabled", True):
+            continue
+
+        # at the end append either phone, -u username, -g group_id
+        dest_part = None
+        if "phone" in dest:
+            dest_part = dest["phone"]
+        elif "username" in dest:
+            dest_part = "-u " + dest["username"]
+        elif "group" in dest:
+            dest_part = "-g " + dest["group"]
+        else:
+            # no destination
+            continue
+
+        cmd = f'signal-cli send -m {e.link} --preview-url {e.link} --preview-title "{e.title}" --preview-description "{e.description}"'
+        if img_part is not None:
+            cmd += img_part
+
+        cmd += " " + dest_part
+
+        if no_signal:
+            print(f"Would run: {cmd}")
+        else:
+            # run cmd, raise exception if error
+            subprocess.run(cmd, shell=True, check=True)
 
 
 def default(obj):
@@ -76,6 +114,7 @@ def object_hook(o):
 def main(profile: str, start_date: datetime.datetime | None = None):
     cfg = json.load(Path(_config_fn(profile)).open())
     feed_url = cfg["feed_url"]
+    dests = cfg.get("dests", [])
 
     try:
         state = json.load(Path(_state_fn(profile)).open(), object_hook=object_hook)
@@ -103,7 +142,7 @@ def main(profile: str, start_date: datetime.datetime | None = None):
         if (latest_processed_entry_date is None or e_date > latest_processed_entry_date) and (
             start_date is None or e_date > start_date.replace(tzinfo=datetime.timezone.utc)
         ):
-            process_entry(e)
+            process_entry(e, dests)
             if state.get(LPED) is None or e_date > state[LPED]:
                 state[LPED] = e_date
             dump_state(state, profile)
