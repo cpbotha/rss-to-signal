@@ -95,7 +95,7 @@ def main(profile: str):
         print("Nothing has changed since the previous feed fetch")
         return
 
-    for e in d.entries:
+    for e in sorted(d.entries, key=lambda x: x.published_parsed):
         # published_parsed is a time.struct_time which has no TZ info
         # so we rather parse our own
         # print(e.id, parse(e.published).isoformat())
