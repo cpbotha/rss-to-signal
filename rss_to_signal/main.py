@@ -10,7 +10,6 @@
 # quickest to just maintain a json file which is deserialised into dict
 
 # TODO:
-# - CLI argument start_date
 # - retrieve og:image from post into temporary file
 # - tests
 
@@ -74,7 +73,7 @@ def object_hook(o):
 
 
 @app.command()
-def main(profile: str):
+def main(profile: str, start_date: datetime.datetime | None = None):
     cfg = json.load(Path(_config_fn(profile)).open())
     feed_url = cfg["feed_url"]
 
@@ -101,7 +100,9 @@ def main(profile: str):
         # print(e.id, parse(e.published).isoformat())
         # print(json.dumps(e, indent=2))
         e_date = parse(cast(str, e.published))
-        if latest_processed_entry_date is None or e_date > latest_processed_entry_date:
+        if (latest_processed_entry_date is None or e_date > latest_processed_entry_date) and (
+            start_date is None or e_date > start_date.replace(tzinfo=datetime.timezone.utc)
+        ):
             process_entry(e)
             if state.get(LPED) is None or e_date > state[LPED]:
                 state[LPED] = e_date
