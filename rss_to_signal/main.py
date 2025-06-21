@@ -130,6 +130,8 @@ def main(
 
     {"feed_url": "https://some.site.com/index.xml", "dests": [{"group": "<group id from `signal-cli listGroups`>"}]}
 
+    Each dest can be group, username or phone.
+
     """
     cfg = json.load(Path(_config_fn(feed_name)).open())
     feed_url = cfg["feed_url"]
@@ -181,5 +183,4 @@ def main(
 
 
 if __name__ == "__main__":
-    # typer.run(main)
     app()
