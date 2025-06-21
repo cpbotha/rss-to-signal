@@ -9,8 +9,9 @@
 import datetime
 import json
 import mimetypes
-from pathlib import Path
 import subprocess
+import tempfile
+from pathlib import Path
 from typing import cast
 
 import feedparser
@@ -18,7 +19,8 @@ import httpx
 import typer
 from bs4 import BeautifulSoup
 from dateutil.parser import parse
-import tempfile
+from rich import print
+from typing_extensions import Annotated
 
 LPED = "latest_processed_entry_date"
 
@@ -45,11 +47,8 @@ def get_og_image(url):
     return None
 
 
-def process_entry(e, dests: list, dry_run=False):
-    # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
-    print(f"handling {e.id} and {e.link} with {e.published}")
-
-    og_image = get_og_image(e.link)
+def process_entry(entry: feedparser.FeedParserDict, dests: list, dry_run=False):
+    og_image = get_og_image(entry.link)
     if og_image is not None:
         img_part = f' --preview-image "{og_image}"'
     else:
@@ -71,14 +70,16 @@ def process_entry(e, dests: list, dry_run=False):
             # no destination
             continue
 
-        cmd = f'signal-cli send -m {e.link} --preview-url {e.link} --preview-title "{e.title}" --preview-description "{e.description}"'
+        # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
+        cmd = f'signal-cli send -m {entry.link} --preview-url {entry.link} --preview-title "{entry.title}" --preview-description "{entry.description}"'
         if img_part is not None:
             cmd += img_part
 
         cmd += " " + dest_part
 
+        print(f"About to notify {dest_part} of {entry.link}")
         if dry_run:
-            print(f"Would run: {cmd}")
+            print(f"Not running: {cmd}")
         else:
             # run cmd, raise exception if error
             subprocess.run(cmd, shell=True, check=True)
@@ -111,7 +112,16 @@ def object_hook(o):
 
 
 @app.command()
-def main(feed_name: str, start_date: datetime.datetime | None = None, skip_signal: bool = False):
+def main(
+    feed_name: Annotated[
+        str,
+        typer.Argument(help="Name for the feed you want to monitor; used for file naming e.g. `<feed_name>.cfg.json`"),
+    ],
+    start_date: Annotated[datetime.datetime | None, typer.Option(help="Only process posts newer than this")] = None,
+    skip_signal: Annotated[
+        bool, typer.Option(help="Do everything *except* sending out the Signal notifications")
+    ] = False,
+):
     cfg = json.load(Path(_config_fn(feed_name)).open())
     feed_url = cfg["feed_url"]
     dests = cfg.get("dests", [])
@@ -142,10 +152,15 @@ def main(feed_name: str, start_date: datetime.datetime | None = None, skip_signa
         if (latest_processed_entry_date is None or e_date > latest_processed_entry_date) and (
             start_date is None or e_date > start_date.replace(tzinfo=datetime.timezone.utc)
         ):
+            print(f"🚀 Process {e.link} of {e.published}")
             process_entry(e, dests, skip_signal)
             if state.get(LPED) is None or e_date > state[LPED]:
                 state[LPED] = e_date
             dump_state(state, feed_name)
+        else:
+            print(f"➖ Skip {e.link} of {e.published}, older than latest processed date or older than start-date")
+
+        print("\n")
 
     # we only save the etag / feed modified date if we've processed all the entries
     if d.etag:
