@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+
 from rss_to_signal import main
 
 
@@ -13,7 +15,7 @@ def test_og_image():
     assert Path(fname).exists()
 
 
-def test_e2e(request, capsys):
+def test_e2e_skip_signal(request, capsys):
     # ensure that cwd == tests/
     os.chdir(request.fspath.dirname)
     # ensure that there is no state file
@@ -29,3 +31,25 @@ def test_e2e(request, capsys):
     assert captured.out.find("➖ Skip ") >= 0
     assert captured.out.find("🚀 Process") >= 0
     assert captured.out.find("signal-cli send") >= 0
+
+
+# I have an .env file at project top-level, and pytest-dotenv is installed
+@pytest.mark.skipif(
+    not os.environ.get("TEST_SIGNAL_USERNAME"), reason="TEST_SIGNAL_USERNAME environment variable not set"
+)
+def test_e2e(request, capsys):
+    # ensure that cwd == tests/
+    os.chdir(request.fspath.dirname)
+    # ensure that there is no state file
+    Path("test.state.json").unlink(missing_ok=True)
+    # ensure that there is a cfg
+    cfg = {"feed_url": "https://cpbotha.net/index.xml", "dests": [{"username": os.environ.get("TEST_SIGNAL_USERNAME")}]}
+    with Path("test.cfg.json").open("w") as f:
+        json.dump(cfg, f)
+    # bleh
+    main.main("test", start_date=datetime.datetime(2025, 6, 11, 0, 0, 0))
+    captured = capsys.readouterr()
+
+    assert captured.out.find("➖ Skip ") >= 0
+    assert captured.out.find("🚀 Process") >= 0
+    assert captured.out.find("About to notify -u cpbotha.01") >= 0

@@ -24,4 +24,5 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
+    "pytest-dotenv>=0.5.2",
 ]
