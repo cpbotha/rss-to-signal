@@ -45,7 +45,7 @@ def get_og_image(url):
     return None
 
 
-def process_entry(e, dests: list, no_signal=False):
+def process_entry(e, dests: list, dry_run=False):
     # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
     print(f"handling {e.id} and {e.link} with {e.published}")
 
@@ -77,7 +77,7 @@ def process_entry(e, dests: list, no_signal=False):
 
         cmd += " " + dest_part
 
-        if no_signal:
+        if dry_run:
             print(f"Would run: {cmd}")
         else:
             # run cmd, raise exception if error
@@ -90,16 +90,16 @@ def default(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
-def _state_fn(profile: str):
-    return f"{profile}.state.json"
+def _state_fn(feed_name: str):
+    return f"{feed_name}.state.json"
 
 
-def _config_fn(profile: str):
-    return f"{profile}.cfg.json"
+def _config_fn(feed_name: str):
+    return f"{feed_name}.cfg.json"
 
 
-def dump_state(state, profile: str):
-    json.dump(state, Path(_state_fn(profile)).open("w"), indent=2, default=default)
+def dump_state(state, feed_name: str):
+    json.dump(state, Path(_state_fn(feed_name)).open("w"), indent=2, default=default)
 
 
 def object_hook(o):
@@ -111,13 +111,13 @@ def object_hook(o):
 
 
 @app.command()
-def main(profile: str, start_date: datetime.datetime | None = None):
-    cfg = json.load(Path(_config_fn(profile)).open())
+def main(feed_name: str, start_date: datetime.datetime | None = None, skip_signal: bool = False):
+    cfg = json.load(Path(_config_fn(feed_name)).open())
     feed_url = cfg["feed_url"]
     dests = cfg.get("dests", [])
 
     try:
-        state = json.load(Path(_state_fn(profile)).open(), object_hook=object_hook)
+        state = json.load(Path(_state_fn(feed_name)).open(), object_hook=object_hook)
     except FileNotFoundError:
         state = {}
 
@@ -142,10 +142,10 @@ def main(profile: str, start_date: datetime.datetime | None = None):
         if (latest_processed_entry_date is None or e_date > latest_processed_entry_date) and (
             start_date is None or e_date > start_date.replace(tzinfo=datetime.timezone.utc)
         ):
-            process_entry(e, dests)
+            process_entry(e, dests, skip_signal)
             if state.get(LPED) is None or e_date > state[LPED]:
                 state[LPED] = e_date
-            dump_state(state, profile)
+            dump_state(state, feed_name)
 
     # we only save the etag / feed modified date if we've processed all the entries
     if d.etag:
@@ -153,7 +153,7 @@ def main(profile: str, start_date: datetime.datetime | None = None):
     if d.modified:
         state["modified"] = parse(cast(str, d.modified))
 
-    dump_state(state, profile)
+    dump_state(state, feed_name)
 
 
 if __name__ == "__main__":
