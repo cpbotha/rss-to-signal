@@ -115,13 +115,22 @@ def object_hook(o):
 def main(
     feed_name: Annotated[
         str,
-        typer.Argument(help="Name for the feed you want to monitor; used for file naming e.g. `<feed_name>.cfg.json`"),
+        typer.Argument(
+            help="Name of the feed you want to monitor; used only for naming `<feed_name>.cfg.json` and `<feed_name>.state.json`"
+        ),
     ],
     start_date: Annotated[datetime.datetime | None, typer.Option(help="Only process posts newer than this")] = None,
     skip_signal: Annotated[
         bool, typer.Option(help="Do everything *except* sending out the Signal notifications")
     ] = False,
 ):
+    """Monitor RSS feeds for new posts and send notification with link preview via signal-cli
+
+    Before running this, create a config file named <feed_name>.cfg.json with at least the following contents:
+
+    {"feed_url": "https://some.site.com/index.xml", "dests": [{"group": "<group id from `signal-cli listGroups`>"}]}
+
+    """
     cfg = json.load(Path(_config_fn(feed_name)).open())
     feed_url = cfg["feed_url"]
     dests = cfg.get("dests", [])
