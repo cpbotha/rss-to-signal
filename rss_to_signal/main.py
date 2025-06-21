@@ -47,12 +47,15 @@ def get_og_image(url):
     return None
 
 
-def process_entry(entry: feedparser.FeedParserDict, dests: list, dry_run=False):
+def process_entry(entry: feedparser.FeedParserDict, dests: list, dry_run=False, signal_cmd: str | None = None):
     og_image = get_og_image(entry.link)
     if og_image is not None:
         img_part = f' --preview-image "{og_image}"'
     else:
         img_part = ""
+
+    if signal_cmd is None:
+        signal_cmd = "signal-cli"
 
     for dest in dests:
         if not dest.get("enabled", True):
@@ -71,7 +74,7 @@ def process_entry(entry: feedparser.FeedParserDict, dests: list, dry_run=False):
             continue
 
         # https://feedparser.readthedocs.io/en/latest/common-rss-elements.html#accessing-common-item-elements
-        cmd = f'signal-cli send -m {entry.link} --preview-url {entry.link} --preview-title "{entry.title}" --preview-description "{entry.description}"'
+        cmd = f'{signal_cmd} send -m {entry.link} --preview-url {entry.link} --preview-title "{entry.title}" --preview-description "{entry.description}"'
         if img_part is not None:
             cmd += img_part
 
@@ -136,6 +139,10 @@ def main(
     cfg = json.load(Path(_config_fn(feed_name)).open())
     feed_url = cfg["feed_url"]
     dests = cfg.get("dests", [])
+    # optionally set this if you need to pass account, or the full path, e.g.
+    # "signal_cmd": "/usr/local/bin/signal-cli -a MY_ACCOUNT"
+    # the default value is just "signal-cli" which should work in many cases
+    signal_cmd = cfg.get("signal_cmd")
 
     try:
         state = json.load(Path(_state_fn(feed_name)).open(), object_hook=object_hook)
@@ -164,7 +171,7 @@ def main(
             start_date is None or e_date > start_date.replace(tzinfo=datetime.timezone.utc)
         ):
             print(f"🚀 Process {e.link} of {e.published}")
-            process_entry(e, dests, skip_signal)
+            process_entry(e, dests, skip_signal, signal_cmd)
             if state.get(LPED) is None or e_date > state[LPED]:
                 state[LPED] = e_date
             dump_state(state, feed_name)
