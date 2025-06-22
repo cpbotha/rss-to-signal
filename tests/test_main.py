@@ -35,7 +35,8 @@ def test_e2e_skip_signal(request, capsys):
 
 # I have an .env file at project top-level, and pytest-dotenv is installed
 @pytest.mark.skipif(
-    not os.environ.get("TEST_SIGNAL_USERNAME"), reason="TEST_SIGNAL_USERNAME environment variable not set"
+    not (os.environ.get("TEST_SIGNAL_GROUP_ID") and os.environ.get("TEST_SIGNAL_USERNAME")),
+    reason="TEST_SIGNAL_* environment variables not set",
 )
 def test_e2e(request, capsys):
     # ensure that cwd == tests/
@@ -43,7 +44,12 @@ def test_e2e(request, capsys):
     # ensure that there is no state file
     Path("test.state.json").unlink(missing_ok=True)
     # ensure that there is a cfg
-    cfg = {"feed_url": "https://cpbotha.net/index.xml", "dests": [{"username": os.environ.get("TEST_SIGNAL_USERNAME")}]}
+    username = os.environ.get("TEST_SIGNAL_USERNAME")
+    group = os.environ["TEST_SIGNAL_GROUP_ID"]
+    cfg = {
+        "feed_url": "https://cpbotha.net/index.xml",
+        "dests": [{"username": username}, {"group": group}],
+    }
     with Path("test.cfg.json").open("w") as f:
         json.dump(cfg, f)
     # bleh
@@ -52,4 +58,5 @@ def test_e2e(request, capsys):
 
     assert captured.out.find("➖ Skip ") >= 0
     assert captured.out.find("🚀 Process") >= 0
-    assert captured.out.find("About to notify -u cpbotha.01") >= 0
+    assert captured.out.find(f"About to notify -u {username}") >= 0
+    assert captured.out.find(f"About to notify -g {group}") >= 0
